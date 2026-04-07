@@ -958,9 +958,12 @@ def save_results_csv(all_trials, summary_rows):
     with open(summary_path, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=[
             'ks_len', 'n_trials',
-            'corr_success_pct', 'corr_avg_ms',
-            'fca_success_pct', 'fca_avg_ms',
-            'wht_success_pct', 'wht_avg_ms',
+            'corr_success_pct', 'corr_success_ci_lo', 'corr_success_ci_hi',
+            'corr_avg_ms', 'corr_ci_lo_ms', 'corr_ci_hi_ms', 'corr_ci_half_ms',
+            'fca_success_pct', 'fca_success_ci_lo', 'fca_success_ci_hi',
+            'fca_avg_ms', 'fca_ci_lo_ms', 'fca_ci_hi_ms', 'fca_ci_half_ms',
+            'wht_success_pct', 'wht_success_ci_lo', 'wht_success_ci_hi',
+            'wht_avg_ms', 'wht_ci_lo_ms', 'wht_ci_hi_ms', 'wht_ci_half_ms',
             'speedup_vs_corr_mean', 'speedup_vs_corr_ci_lo', 'speedup_vs_corr_ci_hi',
             'speedup_vs_fca_mean', 'speedup_vs_fca_ci_lo', 'speedup_vs_fca_ci_hi'
         ])
