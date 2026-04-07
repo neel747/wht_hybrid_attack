@@ -644,10 +644,11 @@ def verify_wht_correctness():
 # In[13]:
 
 
-print("STEP 1: CORRECTNESS VERIFICATION\n")
-ok = verify_wht_correctness()
-if not ok:
-    raise RuntimeError("WHT verification failed!")
+if __name__ == '__main__':
+    print("STEP 1: CORRECTNESS VERIFICATION\n")
+    ok = verify_wht_correctness()
+    if not ok:
+        raise RuntimeError("WHT verification failed!")
 
 
 # ## 9. Comparison Engine
@@ -924,11 +925,12 @@ KEYSTREAM_LENGTHS = [200, 500, 800, 1500]
 N_TRIALS = 100
 K = 5
 
-print("STEP 2: ATTACK COMPARISON\n")
-all_trials, summary_rows = run_comparison(
-    LFSR_40BIT, KEYSTREAM_LENGTHS,
-    n_trials=N_TRIALS, K=K
-)
+def main():
+    print("STEP 2: ATTACK COMPARISON\n")
+    all_trials, summary_rows = run_comparison(
+        LFSR_40BIT, KEYSTREAM_LENGTHS,
+        n_trials=N_TRIALS, K=K
+    )
 
 
 # ## 11. Save Results
@@ -971,8 +973,8 @@ def save_results_csv(all_trials, summary_rows):
         writer.writerows(summary_rows)
     print(f"Summary results saved to '{summary_path}'")
 
-print("\nSTEP 3: SAVING RESULTS\n")
-save_results_csv(all_trials, summary_rows)
+    print("\nSTEP 3: SAVING RESULTS\n")
+    save_results_csv(all_trials, summary_rows)
 
 
 # ## 12. Visualization
@@ -1088,8 +1090,11 @@ def plot_results(summary_rows):
     print(f"\nPlot saved to '{plot_path}'")
     plt.show()
 
-print("\nSTEP 4: VISUALIZATION\n")
-plot_results(summary_rows)
+    print("\nSTEP 4: VISUALIZATION\n")
+    plot_results(summary_rows)
 
-print("\n✓ Done!")
+    print("\n✓ Done!")
+
+if __name__ == '__main__':
+    main()
 

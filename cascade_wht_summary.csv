@@ -1,5 +1,5 @@
-ks_len,corr_success,corr_avg_ms,corr_std_ms,wht_success,wht_avg_ms,wht_std_ms,speedup
-200,100.0,1583.3,14.6,60.0,25.0,8.5,63.31
-500,100.0,4174.5,719.6,100.0,42.0,10.3,99.31
-800,100.0,6199.6,66.5,100.0,61.4,4.3,100.93
-1500,100.0,11594.0,187.6,100.0,115.4,13.7,100.47
+ks_len,n_trials,corr_success_pct,corr_success_ci_lo,corr_success_ci_hi,corr_avg_ms,corr_ci_lo_ms,corr_ci_hi_ms,corr_ci_half_ms,fca_success_pct,fca_success_ci_lo,fca_success_ci_hi,fca_avg_ms,fca_ci_lo_ms,fca_ci_hi_ms,fca_ci_half_ms,wht_success_pct,wht_success_ci_lo,wht_success_ci_hi,wht_avg_ms,wht_ci_lo_ms,wht_ci_hi_ms,wht_ci_half_ms,speedup_vs_corr_mean,speedup_vs_corr_ci_lo,speedup_vs_corr_ci_hi,speedup_vs_fca_mean,speedup_vs_fca_ci_lo,speedup_vs_fca_ci_hi
+200,100,100.0,96.3,100.0,1584.0,1577.4,1590.6,6.6,0.0,0.0,3.7,66.5,65.7,67.4,0.9,65.0,55.3,73.6,22.8,21.1,24.6,1.7,78.52,73.71,83.33,3.31,3.1,3.52
+500,100,100.0,96.3,100.0,3973.6,3926.1,4021.1,47.5,0.0,0.0,3.7,164.4,161.4,167.4,3.0,99.0,94.6,99.8,39.8,38.8,40.8,1.0,100.59,99.09,102.08,4.16,4.08,4.24
+800,100,100.0,96.3,100.0,6689.3,6644.1,6734.4,45.2,0.0,0.0,3.7,271.0,263.7,278.3,7.3,100.0,96.3,100.0,68.1,63.1,73.2,5.1,101.7,99.57,103.82,4.07,4.0,4.15
+1500,100,100.0,96.3,100.0,11470.0,11441.5,11498.5,28.5,0.0,0.0,3.7,444.1,440.4,447.8,3.7,100.0,96.3,100.0,112.2,111.2,113.2,1.0,102.38,101.68,103.08,3.96,3.92,4.0

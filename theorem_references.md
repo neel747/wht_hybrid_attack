@@ -82,45 +82,6 @@ transform simultaneously computes correlations for *all* `2^L` seeds in `O(L × 
 
 ---
 
-## Building Block 3: Distribution of W(s) — Central Limit Theorem
-
-### Source
-- Any standard probability textbook, e.g.:
-  - **Feller, W.** (1968). *An Introduction to Probability Theory and Its Applications*,
-    Vol. 1, 3rd ed., Wiley. (Chapter VII: Central Limit Theorem)
-  - **Papoulis, A. & Pillai, S.U.** (2002). *Probability, Random Variables, and Stochastic
-    Processes*, 4th ed., McGraw-Hill.
-
-### What we use from it
-
-**For the correct seed s*:**
-Each term `(-1)^{z_t ⊕ x_t(s*)}` is a Bernoulli-like random variable:
-- `= +1` with probability `p` (keystream matches LFSR output)
-- `= -1` with probability `1-p`
-
-By CLT (sum of N₁ i.i.d. bounded random variables):
-```
-W(s*) ~ N(μ = N₁(2p-1), σ² = 4N₁p(1-p))
-```
-
-**For wrong seeds s ≠ s*:**
-The LFSR output `x_t(s)` is pseudo-random and effectively independent of `z_t`.
-Each term is `±1` with equal probability:
-```
-W(s) ~ N(0, N₁)
-```
-
-**This is the key insight**: correct seed has a *biased* distribution (mean ≠ 0),
-wrong seeds are *unbiased* (mean = 0). The separation between these distributions
-is what makes pruning possible.
-
-### How to explain to your professor
-> "The distributional model for WHT coefficients follows directly from the CLT applied
-> to sums of i.i.d. ±1 random variables. For the correct seed, the bias is (2p-1) per
-> term [from Siegenthaler's correlation]. For wrong seeds, the terms are unbiased.
-> This is a standard probabilistic argument — no new machinery is needed."
-
----
 
 ## Building Block 4: Order Statistics & Extreme Value Theory
 
