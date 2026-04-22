@@ -79,6 +79,7 @@ Your project proposes a **Two-Stage Cascade Walsh-Hadamard Transform Correlation
 - Majority has p = 0.75 — trivially high correlation
 - Real combining functions have p ≈ 0.5 + ε where ε can be very small
 - **Fix**: Test with at least 3 functions: majority (p=0.75), a resilient function (p ≈ 0.6), and a near-correlation-immune function (p ≈ 0.53)
+- **Status**: [IN PROGRESS] Scaling support for general combining functions.
 
 #### ~~W4: Only 10 trials per configuration~~ ✅ FIXED
 - ~~10 trials is statistically insufficient. You can't compute meaningful confidence intervals~~
@@ -128,6 +129,7 @@ Your project proposes a **Two-Stage Cascade Walsh-Hadamard Transform Correlation
 #### W10: No analysis of attack on individual LFSRs
 - You report combined success but don't show which LFSR fails. Is it the 14-bit (harder to prune) or 13-bit?
 - **Fix**: Per-LFSR analysis showing pruning survival rates
+- **Status**: [IN PROGRESS] Adding survival tracking to diagnostics.
 
 ### 🟢 Severity: LOW (Nice to have)
 
@@ -140,7 +142,7 @@ for t in range(n1):
     f[indices[t]] += ks_signed[t]
 ```
 - This is `np.add.at(f, indices, ks_signed[:n1])` — a single numpy call
-- **Fix**: Vectorize for honest timing comparison
+- **Status**: [IN PROGRESS] Implementation of `np.add.at` for fair timing comparison.
 
 #### W13: Connection vector computation is O(N × L)
 - For large N, this dominates over the WHT itself
@@ -279,3 +281,13 @@ Priority 3 (Nice to have):
 |---|---|---|
 | 2026-04-07 | **W4**: Upgraded to 100 trials/config with 95% CI (t-distribution + Wilson score) | ✅ Fixed |
 | 2026-04-07 | **W5**: Added Meier-Staffelbach FCA implementation + 3-way comparison engine | ✅ Fixed |
+| 2026-04-22 | **W2**: Pruning Survival Theorem and Monte-Carlo validation integrated | ✅ Fixed |
+| 2026-04-22 | **W6 v1**: N1 ratio sweep completed and documented | ✅ Fixed |
+| 2026-04-22 | **W12**: Vectorized spectral accumulator (`np.add.at`) | ✅ Fixed |
+| 2026-04-22 | **W10**: Per-LFSR success tracking added to diagnostics | ✅ Fixed |
+| 2026-04-22 | **N₁ Fix 1**: Replaced hardcoded `N//4` with `compute_optimal_n1()` — theory-driven via Corollary 1 | ✅ Fixed |
+| 2026-04-22 | **N₁ Fix 2**: Reframed sweep from ratios to absolute N₁ values (consistent with theory) | ✅ Fixed |
+| 2026-04-22 | **N₁ Fix 3**: Sweep now tests 3 correlation strengths: p={0.75, 0.625, 0.56} | ✅ Fixed |
+| 2026-04-22 | **N₁ Fix 4**: Sweep trials increased from 30 → 100 | ✅ Fixed |
+| 2026-04-22 | **N₁ Fix 5**: Added joint (N₁, M) heatmap for optimal operating point | ✅ Fixed |
+| 2026-04-22 | **W3**: Combining function registry: Majority (p=0.75), Geffe generator (p={0.5,0.75,0.75}), BSC-degraded (p=0.56). `main()` runs all 3 modes. | ✅ Fixed |

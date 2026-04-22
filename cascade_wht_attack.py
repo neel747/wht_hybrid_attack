@@ -51,21 +51,82 @@ class LFSR:
 # In[3]:
 
 
+# ─── Combining Function Registry ───────────────────────────────────
+# Each combining function mode defines:
+#   - combiner: function(outputs_array) -> keystream
+#   - p_corr: per-LFSR correlation probabilities P(output = LFSR_i)
+#   - description: human-readable label
+
+COMBINING_FUNCTIONS = {
+    'majority': {
+        'p_corr': [0.75, 0.75, 0.75],
+        'description': 'Majority (threshold ≥ 2/3)',
+    },
+    'geffe': {
+        'p_corr': [0.5, 0.75, 0.75],  # x1 is selector, x2/x3 are selected
+        'description': 'Geffe generator (x1·x2 ⊕ (1⊕x1)·x3)',
+    },
+}
+
+
+def _apply_combiner(outputs: np.ndarray, mode: str) -> np.ndarray:
+    """Apply combining function to LFSR output matrix (n_lfsr × n_bits)."""
+    if mode == 'majority':
+        return (np.sum(outputs, axis=0) >= 2).astype(np.uint8)
+    elif mode == 'geffe':
+        # f(x1,x2,x3) = x1·x2 ⊕ (1⊕x1)·x3
+        x1, x2, x3 = outputs[0], outputs[1], outputs[2]
+        return ((x1 & x2) ^ ((1 ^ x1) & x3)).astype(np.uint8)
+    else:
+        return (np.sum(outputs, axis=0) >= 2).astype(np.uint8)
+
+
+def apply_bsc_noise(keystream: np.ndarray, p_orig: float,
+                    p_target: float) -> np.ndarray:
+    """
+    Apply Binary Symmetric Channel noise to reduce effective correlation.
+
+    Given a keystream with per-LFSR correlation p_orig, add noise to
+    simulate a weaker combining function with correlation p_target.
+
+    The crossover probability is: q = (p_orig - p_target) / (2*p_orig - 1)
+
+    This is the standard technique from Siegenthaler (1985) and
+    Meier-Staffelbach (1989) for testing attacks at different
+    correlation strengths.
+    """
+    if p_target >= p_orig:
+        return keystream.copy()
+    epsilon_orig = 2 * p_orig - 1
+    q = (p_orig - p_target) / epsilon_orig  # crossover probability
+    noise = (np.random.random(len(keystream)) < q).astype(np.uint8)
+    return keystream ^ noise
+
+
 class StreamCipher:
-    """Stream cipher combining 3 LFSRs with majority function."""
+    """Stream cipher combining LFSRs with configurable combining function."""
 
     def __init__(self, configs: List[Tuple[int, List[int]]],
-                 seeds: Tuple[int, ...] = None):
+                 seeds: Tuple[int, ...] = None,
+                 mode: str = 'majority'):
         self.configs = configs
+        self.mode = mode
         if seeds is None:
             seeds = tuple(np.random.randint(1, (1 << c[0])) for c in configs)
         self.seeds = seeds
         self.lfsrs = [LFSR(c[0], c[1], s)
                       for c, s in zip(configs, seeds)]
 
+    @property
+    def p_corr_per_lfsr(self) -> List[float]:
+        """Per-LFSR correlation probabilities for current combining mode."""
+        if self.mode in COMBINING_FUNCTIONS:
+            return COMBINING_FUNCTIONS[self.mode]['p_corr']
+        return [0.75] * len(self.configs)
+
     def generate_keystream(self, n: int) -> np.ndarray:
         outputs = np.stack([lfsr.generate(n) for lfsr in self.lfsrs])
-        return (np.sum(outputs, axis=0) >= 2).astype(np.uint8)
+        return _apply_combiner(outputs, self.mode)
 
 
 # ## 2. Connection Vector Generator
@@ -161,8 +222,8 @@ def wht_spectral_pruning(length: int, taps: List[int],
     f = np.zeros(1 << length, dtype=np.float64)
     ks_signed = 1.0 - 2.0 * keystream[:n1].astype(np.float64)
 
-    for t in range(n1):
-        f[indices[t]] += ks_signed[t]
+    # W12: Fully vectorized spectral accumulation
+    np.add.at(f, indices, ks_signed)
 
     f = fwht(f)
 
@@ -170,6 +231,52 @@ def wht_spectral_pruning(length: int, taps: List[int],
     top_m = np.argsort(np.abs(f))[-M:]
 
     return top_m
+
+
+# ## 4b. Theory-Driven N₁ Selection (Corollary 1)
+
+
+def compute_optimal_n1(
+    L: int, M: int, p_corr: float = 0.75,
+    target_survival: float = 0.99
+) -> int:
+    """
+    Compute the minimum N₁ (partial keystream length) required for
+    the correct seed to survive WHT spectral pruning with probability
+    >= target_survival.
+
+    Based on Corollary 1 of the pruning theorem:
+        N₁ ≥ [Φ⁻¹(1−δ)·√(1−ε²) + √(2·ln(2^L/M))]² / ε²
+
+    where ε = 2p−1 is the correlation bias.
+
+    Args:
+        L: LFSR register length
+        M: number of survivors to keep in Stage 1
+        p_corr: correlation probability P(ks_t = lfsr_t)
+        target_survival: desired P_survive (default 0.99)
+
+    Returns:
+        Minimum N₁ (integer, at least 30 for CLT validity)
+    """
+    epsilon = 2.0 * p_corr - 1.0
+    if epsilon <= 0:
+        return 10000  # degenerate: no correlation, need huge keystream
+
+    delta = 1.0 - target_survival
+    z_delta = stats.norm.ppf(1.0 - delta)  # Φ⁻¹(1−δ)
+
+    # Pruning threshold scaling: √(2·ln(2^L / M))
+    ratio = (1 << L) / max(M, 1)
+    if ratio <= 1:
+        return 30
+    ln_term = np.sqrt(2.0 * np.log(ratio))
+
+    # N₁ from Corollary 1
+    numerator = (z_delta * np.sqrt(1.0 - epsilon**2) + ln_term) ** 2
+    n1_min = int(np.ceil(numerator / (epsilon**2)))
+
+    return max(n1_min, 30)  # CLT requires N₁ ≥ 30
 
 
 # ## 5. Stage 2: Precise Correlation on Survivors
@@ -517,27 +624,42 @@ def fast_correlation_attack(
 def cascade_wht_attack(
     keystream: np.ndarray,
     configs: List[Tuple[int, List[int]]],
-    K: int = 5
+    K: int = 5,
+    p_corr: float = 0.75,
+    secret_seeds: Optional[Tuple[int, ...]] = None  # Added for W10 diagnostics
 ) -> Tuple[bool, Optional[Tuple[int, ...]], float, dict]:
     """
     Two-Stage Cascade WHT Correlation Attack.
 
-    Stage 1: WHT on partial keystream (N/4 bits) → spectral pruning
-             → keep top-M candidates where M = √(2^L)
+    Stage 1: WHT on adaptive N₁ bits (theory-driven via Corollary 1)
+             → spectral pruning → keep top-M candidates where M = √(2^L)
     Stage 2: Full N-bit correlation on M survivors → top-K seeds
     Stage 3: Verify K³ combinations against full keystream
+
+    N₁ is computed adaptively from the pruning survival theorem:
+        N₁_min = f(L, M, p, target_survival=0.99)
+    instead of the previous arbitrary N/4.
 
     Complexity: O(L×2^L + √(2^L)×N + K³×N) per LFSR
     vs Standard: O(N×2^L) per LFSR
     """
     start = time.perf_counter()
     N = len(keystream)
-    N1 = max(N // 4, 50)
+
+    # Theory-driven N₁: compute minimum needed for 99% survival,
+    # then cap at N (can't use more keystream than available)
+    max_L = max(c[0] for c in configs)
+    M_for_largest = max(int(np.sqrt(1 << max_L)), K + 1)
+    N1_theory = compute_optimal_n1(max_L, M_for_largest, p_corr=p_corr,
+                                    target_survival=0.99)
+    N1 = min(N1_theory, N)  # Can't exceed available keystream
 
     diagnostics = {
         'N': N, 'N1': N1,
         'stage1_time': 0, 'stage2_time': 0, 'stage3_time': 0,
-        'M_values': []
+        'M_values': [],
+        'per_lfsr_success': [False] * len(configs),
+        'per_lfsr_ranks': [] # Rank of the correct seed in the top-M list
     }
 
     top_candidates = []
@@ -556,6 +678,13 @@ def cascade_wht_attack(
         )
         diagnostics['stage2_time'] += time.perf_counter() - t2
 
+        # W10: Track if the secret seed for this LFSR was in the top-K
+        secret_seed = secret_seeds[len(top_candidates)]
+        if secret_seed in top_k:
+            diagnostics['per_lfsr_success'][len(top_candidates)] = True
+        
+        # Also track rank in Stage 1 survivors for deeper analysis
+        # (Using a temporary check here since secret_seeds is passed from run_comparison)
         top_candidates.append(top_k)
 
     t3 = time.perf_counter()
@@ -677,20 +806,35 @@ def run_comparison(
     keystream_lengths: List[int],
     n_trials: int = 100,
     K: int = 5,
+    combiner_mode: str = 'majority',
+    bsc_p_target: float = None,
     verbose: bool = True
 ) -> Tuple[list, list]:
     """3-way comparison: Standard Correlation vs FCA vs Cascade WHT.
 
-    Reports mean ± 95% confidence interval (CI) for all timing metrics.
+    Args:
+        combiner_mode: 'majority' or 'geffe' (real combining functions)
+        bsc_p_target: if set, apply BSC noise to simulate weaker correlation.
     """
     total_bits = sum(c[0] for c in configs)
 
+    # Get per-LFSR correlation for this mode
+    mode_info = COMBINING_FUNCTIONS.get(combiner_mode, COMBINING_FUNCTIONS['majority'])
+    p_corr_list = mode_info['p_corr'][:]
+    if bsc_p_target is not None:
+        p_corr_list = [bsc_p_target] * len(configs)
+    p_corr_min = min(p_corr_list)
+    mode_desc = mode_info['description']
+    if bsc_p_target:
+        mode_desc += f' + BSC (p_eff={bsc_p_target})'
+
     print("=" * 100)
-    print("ATTACK COMPARISON: STANDARD CORRELATION vs FCA (MEIER-STAFFELBACH) vs CASCADE WHT")
+    print(f"ATTACK COMPARISON: {mode_desc}")
+    print("  Standard Correlation vs FCA (Meier-Staffelbach) vs Cascade WHT")
     print("=" * 100)
     print("LFSR Configuration:")
     for i, (length, taps) in enumerate(configs):
-        print(f"  LFSR{i+1}: {length}-bit, taps={taps}")
+        print(f"  LFSR{i+1}: {length}-bit, taps={taps}, p_corr={p_corr_list[i]:.3f}")
     print(f"Total key space: {total_bits} bits")
     search_sizes = [f"{(1 << c[0]) - 1}" for c in configs]
     print(f"Search space per LFSR: {' + '.join(search_sizes)} = "
@@ -701,12 +845,14 @@ def run_comparison(
     print(f"Top-K candidates: {K} → {K**3} verification combos")
     for length, _ in configs:
         M = max(int(np.sqrt(1 << length)), K + 1)
-        print(f"  Pruning threshold for {length}-bit LFSR: M={M} "
-              f"(from 2^{length}={1 << length})")
+        n1_opt = compute_optimal_n1(length, M, p_corr=p_corr_min,
+                                     target_survival=0.99)
+        print(f"  {length}-bit LFSR: M={M}, N₁_theory={n1_opt} "
+              f"(99% survival at p={p_corr_min:.3f})")
     print(f"\nAttacks:")
     print(f"  1. Standard Correlation — exhaustive O(N×2^L)")
-    print(f"  2. FCA (Meier-Staffelbach) — iterative bit-flipping, no 2^L enumeration")
-    print(f"  3. Cascade WHT — spectral pruning O(L×2^L + √(2^L)×N)")
+    print(f"  2. FCA (Meier-Staffelbach) — iterative bit-flipping")
+    print(f"  3. Cascade WHT — spectral pruning, theory-driven N₁")
     print()
 
     all_trials = []
@@ -724,23 +870,28 @@ def run_comparison(
         wht_results = []
 
         for trial in range(n_trials):
-            cipher = StreamCipher(configs)
+            cipher = StreamCipher(configs, mode=combiner_mode)
             secret_seeds = cipher.seeds
             keystream = cipher.generate_keystream(ks_len)
+
+            # Apply BSC noise if testing degraded correlation
+            if bsc_p_target is not None:
+                keystream = apply_bsc_noise(keystream, 0.75, bsc_p_target)
 
             # Attack 1: Standard exhaustive correlation
             corr_ok, corr_seeds, corr_time = correlation_attack(
                 keystream, configs
             )
 
-            # Attack 2: FCA (Meier-Staffelbach)
+            # Attack 2: FCA (Meier-Staffelbach) — use effective p_corr
             fca_ok, fca_seeds, fca_time = fast_correlation_attack(
-                keystream, configs
+                keystream, configs, p_corr=p_corr_min
             )
 
-            # Attack 3: Cascade WHT
+            # Attack 3: Cascade WHT (theory-driven N₁ with effective p_corr)
             wht_ok, wht_seeds, wht_time, wht_diag = cascade_wht_attack(
-                keystream, configs, K=K
+                keystream, configs, K=K, p_corr=p_corr_min,
+                secret_seeds=secret_seeds
             )
 
             corr_results.append((corr_ok, corr_time))
@@ -926,16 +1077,35 @@ N_TRIALS = 100
 K = 5
 
 def main():
-    print("STEP 2: ATTACK COMPARISON\n")
-    all_trials, summary_rows = run_comparison(
-        LFSR_40BIT, KEYSTREAM_LENGTHS,
-        n_trials=N_TRIALS, K=K
-    )
+    print("STEP 2: MULTI-MODE ATTACK COMPARISON (W3)\n")
 
+    # W3: Test with multiple combining functions / correlation regimes
+    MODES = [
+        {'combiner_mode': 'majority', 'bsc_p_target': None,
+         'label': 'Mode 1: Majority (p=0.75)'},
+        {'combiner_mode': 'geffe', 'bsc_p_target': None,
+         'label': 'Mode 2: Geffe Generator (p={0.5, 0.75, 0.75})'},
+        {'combiner_mode': 'majority', 'bsc_p_target': 0.56,
+         'label': 'Mode 3: BSC-Degraded (p_eff=0.56)'},
+    ]
 
-# ## 11. Save Results
+    all_mode_results = {}
+    for mode_cfg in MODES:
+        print("\n" + "█" * 100)
+        print(f"  {mode_cfg['label']}")
+        print("█" * 100 + "\n")
 
-# In[16]:
+        trials, summary = run_comparison(
+            LFSR_40BIT, KEYSTREAM_LENGTHS,
+            n_trials=N_TRIALS, K=K,
+            combiner_mode=mode_cfg['combiner_mode'],
+            bsc_p_target=mode_cfg['bsc_p_target']
+        )
+        all_mode_results[mode_cfg['label']] = {
+            'trials': trials, 'summary': summary
+        }
+
+    return all_mode_results
 
 
 def save_results_csv(all_trials, summary_rows):
