@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from scipy import stats
 from scipy.sparse import csr_matrix
 from typing import List, Tuple, Optional
+import numba
 
 
 # ## 1. LFSR & Stream Cipher
@@ -45,7 +46,22 @@ class LFSR:
         return out
 
     def generate(self, n: int) -> np.ndarray:
-        return np.array([self.clock() for _ in range(n)], dtype=np.uint8)
+        taps_arr = np.array(self.taps, dtype=np.int32)
+        return lfsr_generate_fast(self.length, taps_arr, self.state, n)
+
+@numba.jit(nopython=True)
+def lfsr_generate_fast(length, taps_arr, seed, n):
+    state = seed if seed != 0 else 1
+    mask = (1 << length) - 1
+    out_arr = np.zeros(n, dtype=np.uint8)
+    for i in range(n):
+        out = state & 1
+        out_arr[i] = out
+        fb = 0
+        for t in taps_arr:
+            fb ^= (state >> t) & 1
+        state = ((state >> 1) | (fb << (length - 1))) & mask
+    return out_arr
 
 
 # In[3]:
@@ -321,21 +337,35 @@ def correlation_attack_single_lfsr(
 ) -> Tuple[int, int]:
     """
     Standard correlation: try ALL 2^L seeds, return best.
-    Complexity: O(N × 2^L)
+    Optimized with Numba for research-scale (L >= 20).
     """
-    N = len(keystream)
+    taps_arr = np.array(taps, dtype=np.int32)
+    return fast_exhaustive_correlation(length, taps_arr, keystream)
+
+@numba.jit(nopython=True)
+def fast_exhaustive_correlation(length, taps_arr, keystream):
+    n = len(keystream)
     best_seed = 1
     best_corr = 0
-
+    mask = (1 << length) - 1
+    
     for seed in range(1, 1 << length):
-        lfsr = LFSR(length, taps, seed)
-        output = lfsr.generate(N)
-        corr = int(np.sum(output == keystream))
-        if corr > best_corr:
-            best_corr = corr
+        state = seed
+        curr_corr = 0
+        for i in range(n):
+            out = state & 1
+            if out == keystream[i]:
+                curr_corr += 1
+            fb = 0
+            for t in taps_arr:
+                fb ^= (state >> t) & 1
+            state = ((state >> 1) | (fb << (length - 1))) & mask
+        
+        if curr_corr > best_corr:
+            best_corr = curr_corr
             best_seed = seed
-
-    return best_seed, best_corr
+            
+    return int(best_seed), int(best_corr)
 
 
 # In[10]:
@@ -1066,13 +1096,13 @@ def _wilson_ci(successes: int, total: int,
 # In[15]:
 
 
-LFSR_40BIT = [
-    (14, [0, 2, 5]),
-    (13, [0, 3]),
-    (13, [0, 1, 4]),
+LFSR_75BIT = [
+    (25, [0, 3]),              # x^25 + x^3 + 1
+    (25, [0, 2, 3, 22]),       # x^25 + x^22 + x^3 + x^2 + 1
+    (25, [0, 22, 23, 24]),     # x^25 + x^24 + x^23 + x^22 + 1
 ]
 
-KEYSTREAM_LENGTHS = [200, 500, 800, 1500]
+KEYSTREAM_LENGTHS = [800, 1200, 1600]
 N_TRIALS = 100
 K = 5
 
@@ -1096,7 +1126,7 @@ def main():
         print("█" * 100 + "\n")
 
         trials, summary = run_comparison(
-            LFSR_40BIT, KEYSTREAM_LENGTHS,
+            LFSR_75BIT, KEYSTREAM_LENGTHS,
             n_trials=N_TRIALS, K=K,
             combiner_mode=mode_cfg['combiner_mode'],
             bsc_p_target=mode_cfg['bsc_p_target']

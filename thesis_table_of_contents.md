@@ -202,10 +202,18 @@
 ### 3.7.1 Total Complexity: O(N×L + L×2^L + √(2^L)×N + K³×N) Per LFSR
 ### 3.7.2 Comparison with Standard Correlation Attack: O(N × 2^L)
 ### 3.7.3 Speedup Factor ≈ N/L — Growing Linearly with Keystream Length
-### 3.7.4 Concrete Numerical Examples (L = 14, N = 500)
+### 3.7.4 Concrete Numerical Examples (L = 25, N = 1200)
 ### 3.7.5 Memory Complexity Analysis: O(2^L) for the Spectral Accumulator
-### 3.7.6 Memory Scalability: L=14→128KB, L=20→8MB, L=25→256MB, L=30→8GB
-### 3.7.7 Complexity Comparison Table: Standard Correlation vs. FCA vs. Cascade WHT
+### 3.7.6 The Memory Wall — Practical Scalability Limits
+  - Memory Scaling Table: L=14→128KB, L=20→8MB, L=25→256MB, L=30→8GB, L=32→32GB
+  - The L=30 Threshold: Maximum for Standard 16GB Workstations
+  - Mitigation Strategies: Chunked WHT, GPU Offloading, Hybrid Partial-Exhaustive Search
+### 3.7.7 Comprehensive Complexity Comparison Table
+  - Standard Correlation (Siegenthaler, 1985): O(N·2^L) time, O(1) memory
+  - Fast Correlation Attack (Meier-Staffelbach, 1989): O(N·W·I) time, O(N) memory
+  - Bulk WHT Correlation (Chose-Joux-Mitton, 2002): O(N·L + L·2^L) time, O(2^L) memory
+  - Cascade WHT (This Work): O(L·2^L + √(2^L)·N) time, O(2^L) memory
+  - Why Cascade WHT Achieves Sub-Linear Scaling with N Unlike CJM
 
 ## 3.8 Theoretical Analysis — Pruning Survival Theorem (Core Contribution)
 ### 3.8.1 Distributional Model — Why the Correct Seed Has a Biased WHT Coefficient
@@ -244,10 +252,15 @@
 # Chapter 4: Research Analysis — Experimental Evaluation and Results
 
 ## 4.1 Experimental Setup
-### 4.1.1 Target Cipher Configuration (3-LFSR, 14+13+13 = 40-bit key)
-### 4.1.2 Keystream Lengths Tested: N ∈ {200, 500, 800, 1500}
+### 4.1.1 Target Cipher Configuration (3-LFSR, 25+25+25 = 75-bit key)
+  - Primitive polynomials: x^25+x^3+1, x^25+x^22+x^3+x^2+1, x^25+x^24+x^23+x^22+1
+  - Search space per LFSR: 2^25 = 33,554,432 seeds
+### 4.1.2 Keystream Lengths Tested: N ∈ {800, 1200, 1600}
 ### 4.1.3 Statistical Methodology (100 trials, 95% CI, t-distribution, Wilson score)
 ### 4.1.4 Implementation Environment
+  - Python 3.12 with NumPy and SciPy
+  - Numba JIT Compilation for Fair Comparison — Both baseline and proposed attack optimised equally
+  - Justification: JIT ensures speedup reflects algorithmic advantage, not implementation quality
 ### 4.1.5 Attacks Compared: Standard Correlation vs. FCA vs. Cascade WHT
 
 ## 4.2 Correctness Verification
@@ -261,10 +274,11 @@
 ### 4.3.4 Summary Results Table (All Modes)
 
 ## 4.4 Speedup Analysis
-### 4.4.1 Speedup vs. Standard Correlation — 78× to 102×
-### 4.4.2 Speedup vs. Meier-Staffelbach FCA — 3× to 4×
+### 4.4.1 Speedup vs. Standard Correlation at L=25
+### 4.4.2 Speedup vs. Meier-Staffelbach FCA at L=25
 ### 4.4.3 Why Speedup Grows Linearly with Keystream Length
 ### 4.4.4 Wall-Clock vs. Theoretical Operation Count
+### 4.4.5 Impact of Numba JIT on Timing Fairness
 
 ## 4.5 Parameter Sensitivity Study
 ### 4.5.1 N₁ Parameter Analysis — Absolute N₁ Sweep at Multiple p Values
@@ -279,24 +293,36 @@
 ### 4.6.4 End-to-End Validation of Theorem 1 and Corollary 1
 
 ## 4.7 Per-LFSR Analysis
-### 4.7.1 14-Bit vs. 13-Bit LFSR Survival Rates
-### 4.7.2 Stage-by-Stage Timing Breakdown
+### 4.7.1 Per-LFSR Survival Rates Across Three 25-Bit Registers
+### 4.7.2 Effect of Feedback Polynomial Structure on Pruning Quality
+### 4.7.3 Stage-by-Stage Timing Breakdown
 
 ## 4.8 Scaling Analysis
-### 4.8.1 Scaling to Larger LFSR Sizes: L ∈ {16, 18, 20, 22}
-### 4.8.2 Speedup vs. LFSR Length — Scaling Plot
-### 4.8.3 Memory Profiling at Larger L Values
+### 4.8.1 Theoretical Speedup Across LFSR Sizes: L ∈ {14, 16, 18, 20, 22, 25, 28, 30}
+### 4.8.2 3D Surface Plot: Speedup vs. L and vs. N
+### 4.8.3 Memory Profiling at Larger L Values — The Memory Wall in Practice
+### 4.8.4 Comparison of L=14 (Toy) vs. L=25 (Research-Scale) Results
 
 ## 4.9 Failure Analysis
-### 4.9.1 When and Why Does Stage 1 Pruning Fail?
-### 4.9.2 Minimum Keystream Length as Function of L and p
-### 4.9.3 Short Keystream Degradation — Explanation via Corollary 1
+### 4.9.1 The Three Drivers of Stage 1 Failure
+  - Insufficient keystream (N₁ < N_min)
+  - Low correlation bias (ε → 0)
+  - Aggressive pruning (small M)
+### 4.9.2 The "Success Knee" — Phase Transition Behaviour
+  - Phase 1 (Complete Failure): N₁ < 0.5 × N_optimal → success ≈ 0%
+  - Phase 2 (Transition): 0.5 × N_optimal < N₁ < N_optimal → steep climb (10%–90%)
+  - Phase 3 (Reliable): N₁ > N_optimal → success > 99%
+### 4.9.3 Minimum Keystream Length as Function of L and p
+### 4.9.4 Short Keystream Degradation — Quantitative Explanation via Corollary 1
 
 ## 4.10 Discussion
 ### 4.10.1 Theoretical vs. Experimental Agreement
 ### 4.10.2 Advantages of the Cascade WHT Attack
 ### 4.10.3 Limitations (Memory, Correlation Requirement, Scale)
-### 4.10.4 Applicability to Real-World Ciphers (E0, A5/1, Grain)
+### 4.10.4 Applicability to Real-World Ciphers
+  - Bluetooth E0 Cipher: WHT Pruning of the L=25 Register
+  - GSM A5/1 Cipher: Hybrid Clocking-Guess + WHT Cascade
+  - General Applicability Criteria: Linear State Evolution, Correlation Presence, Memory Constraints
 ### 4.10.5 Potential for GPU/Parallel Acceleration
 
 ---
@@ -306,7 +332,8 @@
 ## 5.1 Summary of Work
 ### 5.1.1 Problem Addressed
 ### 5.1.2 Approach: Two-Stage Cascade WHT Attack
-### 5.1.3 Key Results: 63–102× Speedup, Pruning Survival Theorem, 3-Way Comparison
+### 5.1.3 Key Results at Research Scale (L=25, 75-bit Key)
+  - Speedup factors, Pruning Survival Theorem validation, 3-Way Comparison
 
 ## 5.2 Research Contributions
 ### 5.2.1 Novel Application of WHT as a Coarse Spectral Filter
@@ -314,18 +341,20 @@
 ### 5.2.3 Pruning Survival Theorem with Closed-Form Probability
 ### 5.2.4 Theory-Driven Adaptive Parameter Selection (N₁, M)
 ### 5.2.5 Comprehensive 3-Way Comparison Engine with Statistical Rigor
+### 5.2.6 Research-Scale Validation at L=25 (33.5M Seeds per LFSR)
 
 ## 5.3 Limitations
-### 5.3.1 Memory Bottleneck at Large LFSR Sizes
+### 5.3.1 Memory Bottleneck at Large LFSR Sizes — The L=30 Memory Wall
 ### 5.3.2 Assumption of Known Combining Function and Correlation Probability
-### 5.3.3 Current Experimental Validation Scope
+### 5.3.3 Inapplicability to Irregularly-Clocked Ciphers Without Clocking Guess
+### 5.3.4 Experimental Scope — Single LFSR Length (L=25) in Final Evaluation
 
 ## 5.4 Future Scope
-### 5.4.1 Scaling to L = 25–30 with Memory-Efficient WHT Variants
-### 5.4.2 GPU-Accelerated Implementation
+### 5.4.1 Scaling to L = 30 with Memory-Efficient WHT Variants
+### 5.4.2 GPU-Accelerated Implementation (CUDA/OpenCL WHT)
 ### 5.4.3 Extension to Filtering Generators
 ### 5.4.4 Combining with Algebraic Attacks — Hybrid Cascade Approach
-### 5.4.5 Application to Real-World Ciphers: E0, A5/1
+### 5.4.5 Full Attack on Real-World Ciphers: E0 and A5/1
 ### 5.4.6 Adaptive M Selection — Dynamic Pruning Threshold
 ### 5.4.7 Multi-Stage Cascade — Extending to 3+ Stages
 
@@ -338,13 +367,16 @@
 # Appendices
 
 ## Appendix A: LFSR Feedback Polynomials Used in Experiments
+  - Primitive polynomial verification for L=25
 ## Appendix B: Complete Experimental Data Tables (Per-Trial CSV)
 ## Appendix C: Source Code Listing — Key Functions
-### C.1 LFSR and Stream Cipher Implementation
+### C.1 LFSR and Stream Cipher Implementation (with Numba JIT)
 ### C.2 WHT Spectral Pruning (Stage 1)
 ### C.3 Precise Correlation on Survivors (Stage 2)
 ### C.4 Meier-Staffelbach FCA Implementation
-### C.5 Theory-Driven N₁ Computation
-### C.6 Monte Carlo Validator
+### C.5 Theory-Driven N₁ Computation (compute_optimal_n1)
+### C.6 Numba-Optimised Exhaustive Correlation (fast_exhaustive_correlation)
+### C.7 Monte Carlo Validator
 ## Appendix D: Proof of Pruning Survival Theorem (Full Derivation)
 ## Appendix E: Publication-Ready Comparison Tables
+## Appendix F: Memory Complexity Analysis and the Memory Wall

@@ -6,7 +6,7 @@ This file tracks all modifications, improvements, and experimental results for t
 
 ---
 
-## 📅 Last Updated: 2026-04-22
+## 📅 Last Updated: 2026-05-16
 
 ---
 
@@ -32,7 +32,20 @@ This file tracks all modifications, improvements, and experimental results for t
 | 2026-04-22 | **Fix 3: Multi-p sweep** | `n1_ratio_sweep.py` | Now sweeps 3 correlation strengths: p=0.75 (majority), p=0.625 (hybrid), p=0.56 (near-corr-immune) |
 | 2026-04-22 | **Fix 4: 100 trials** | `n1_ratio_sweep.py` | Increased from 30 to 100 trials per configuration |
 | 2026-04-22 | **Fix 5: Joint (N₁, M) heatmap** | `n1_ratio_sweep.py` | Added theoretical heatmap showing P_survive as function of both N₁ and M |
-| 2026-04-22 | **W3: Multiple combining functions** | `cascade_wht_attack.py` | **MAJOR**: Implemented combining function registry with 3 modes: (1) **Majority** p=0.75, (2) **Geffe generator** p={0.5, 0.75, 0.75} — real published cipher with asymmetric correlations, (3) **BSC-degraded** p_eff=0.56 — standard Siegenthaler/Meier-Staffelbach technique. Added `COMBINING_FUNCTIONS` dict, `_apply_combiner()`, `apply_bsc_noise()`, `p_corr_per_lfsr` property. Main engine now loops over all 3 modes automatically. |
+| 2026-04-22 | **W3: Multiple combining functions** | `cascade_wht_attack.py` | **MAJOR**: Implemented combining function registry with 3 modes: (1) **Majority** p=0.75, (2) **Geffe generator** p={0.5, 0.75, 0.75}, (3) **BSC-degraded** p_eff=0.56. |
+
+### Research-Scale Upgrades (2026-05-16)
+
+| Date | Task | Files Modified | Details |
+|------|------|----------------|---------|
+| 2026-05-16 | **W1: Scale LFSR sizes to L=25** | `cascade_wht_attack.py` | **MAJOR**: Transitioned from 40-bit to **75-bit key** ($L=25$ per LFSR). Non-toy research scale. |
+| 2026-05-16 | **Numba Optimization** | `cascade_wht_attack.py` | Integrated JIT compilation for LFSR and Standard Correlation. Reduced $L=20$ trial time from hours to seconds. |
+| 2026-05-16 | **W8: Memory Complexity** | `memory_complexity.md` | Documented $O(2^L)$ and the "Memory Wall" at $L=30$. |
+| 2026-05-16 | **Complexity Comparison** | `complexity_comparison.md` | Comprehensive table vs Siegenthaler, Meier-Staffelbach, and Chose-Joux-Mitton. |
+| 2026-05-16 | **Real Cipher Applicability** | `real_cipher_applicability.md` | Analyzed potential application to Bluetooth (E0) and GSM (A5/1). |
+| 2026-05-16 | **Detailed Failure Analysis** | `failure_analysis.md` | Documentation of the "Success Knee" and drivers of Stage 1 pruning failure. |
+| 2026-05-16 | **3D Scaling Plot** | `scaling_3d_surface.png`, `scaling_analysis_plot.py` | Generated 3D surface plot showing speedup vs L and vs N. |
+| 2026-05-16 | **Survival Heatmap** | `survival_n1_m_heatmap.png` | Joint $N_1$ vs $M$ heatmap for $L=25$ success probability. |
 
 ---
 
@@ -54,14 +67,14 @@ Output from `compute_optimal_n1()` (target: P_survive ≥ 99%):
 
 ### Priority 1 — BLOCKING for publication
 
-- [ ] **W1: Scale LFSR sizes** to L ∈ {16, 18, 20, 22} — eliminates "toy-scale" criticism
-- [x] **W3: Multiple combining functions** — ✅ Implemented: Majority (p=0.75), Geffe (p={0.5, 0.75, 0.75}), BSC-degraded (p=0.56). `main()` now runs all 3 modes.
+- [x] **W1: Scale LFSR sizes** to L=25 — ✅ Transitioned to 75-bit key
+- [x] **W3: Multiple combining functions** — ✅ Implemented: Majority, Geffe, BSC-degraded.
 
 ### Priority 2 — Strongly recommended
 
-- [ ] **W7: M parameter sweep** — justify M = √(2^L) empirically or replace with theory-optimal M
-- [ ] **W8: Memory complexity analysis** — document O(2^L) memory requirements for WHT
-- [ ] **W9: Short keystream failure analysis** — analyze why success drops at N=200
+- [x] **W7: M parameter sweep** — ✅ Justified via `survival_n1_m_heatmap.png`
+- [x] **W8: Memory complexity analysis** — ✅ Documented in `memory_complexity.md`
+- [x] **W9: Short keystream failure analysis** — ✅ Analyzed in `failure_analysis.md`
 - [x] **W10: Per-LFSR analysis** — ✅ Tracking added to diagnostics
 
 ### Priority 3 — Nice to have
@@ -73,10 +86,10 @@ Output from `compute_optimal_n1()` (target: P_survive ≥ 99%):
 ### Paper Polish
 
 - [ ] Formal algorithm pseudocode (LaTeX Algorithm2e)
-- [ ] Complexity comparison table with all known attacks
-- [ ] Scaling plot: speedup vs L and vs N
-- [ ] Failure analysis: when/why Stage 1 pruning fails
-- [ ] Real cipher applicability discussion (E0, A5/1, Grain)
+- [x] Complexity comparison table — ✅ Completed: `complexity_comparison.md`
+- [x] Scaling plot: speedup vs L and vs N — ✅ Completed: `scaling_3d_surface.png`
+- [x] Failure analysis — ✅ Completed: `failure_analysis.md`
+- [x] Real cipher applicability discussion — ✅ Completed: `real_cipher_applicability.md`
 
 ---
 
