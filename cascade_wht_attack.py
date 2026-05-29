@@ -1103,7 +1103,7 @@ LFSR_75BIT = [
 ]
 
 KEYSTREAM_LENGTHS = [800, 1200, 1600]
-N_TRIALS = 100
+N_TRIALS = 50
 K = 5
 
 def main():

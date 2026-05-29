@@ -1,0 +1,240 @@
+\chapter{Proposed Attack: Two-Stage Cascade WHT Correlation Attack}
+\label{ch:proposed_attack}
+
+This chapter introduces the core contribution of this research: the Two-Stage Cascade Walsh-Hadamard Transform (WHT) Correlation Attack. By decoupling the keystream length from the exponential search space, this method achieves sub-linear scaling with respect to the keystream length, shifting the primary computational bottleneck of correlation attacks. We present the combining function models, mathematical foundations, the algorithmic pipeline, rigorous complexity evaluations, and a formal proof of the Pruning Survival Theorem which underpins the attack's probabilistic guarantees.
+
+\section{Attack Overview and Key Insight}
+\label{sec:attack_overview}
+
+The standard correlation attack proposed by Siegenthaler in 1985 requires exhaustively testing all $2^L$ initial states of an LFSR against the entire intercepted keystream of length $N$. This results in a time complexity of $\mathcal{O}(N \times 2^L)$, which becomes computationally intractable for large LFSR lengths $L$ and long keystreams. 
+
+The fundamental insight of the proposed attack is inspired by cascade classifiers in machine learning, such as the Viola-Jones framework. Instead of applying an expensive fitness function (exact correlation over $N$ bits) to all candidates, we apply a fast, coarse spectral filter to eliminate the vast majority of incorrect seeds, followed by a precise evaluation only on the survivors. 
+
+The attack operates under a known-plaintext (or ciphertext-only with known structure) model, targeting an LFSR-based combining generator with a correlation probability $p > 0.5$. The pipeline consists of two stages:
+\begin{enumerate}
+    \item \textbf{Stage 1: WHT Spectral Pruning.} A short segment of the keystream ($N_1 \ll N$) is used to construct a spectral accumulator. The Fast Walsh-Hadamard Transform (FWHT) is applied to compute coarse correlation scores for all $2^L$ seeds simultaneously. The top $M$ candidates are retained.
+    \item \textbf{Stage 2: Precise Correlation.} The full keystream of length $N$ is correlated against the $M$ surviving candidates. The candidates are ranked, and the top seeds are subjected to combinatorial verification (Stage 3).
+\end{enumerate}
+
+\section{Configurable Combining Function Models}
+\label{sec:combining_functions}
+
+The efficacy of a correlation attack depends on the correlation bias $\epsilon = 2p - 1$ between the keystream and the individual LFSR outputs. To comprehensively model this, our framework supports three distinct combining architectures:
+
+\subsection{The Majority Function}
+The most common cryptanalytic target is the 3-input majority function, where the keystream bit $z_t$ is 1 if and only if at least two of the three LFSR outputs are 1. Mathematically, it is defined by the Algebraic Normal Form (ANF):
+\begin{equation}
+    f_{maj}(x_1, x_2, x_3) = x_1 x_2 \oplus x_1 x_3 \oplus x_2 x_3
+\end{equation}
+For uniformly distributed independent inputs, $z_t = x_i$ with probability $p = 0.75$, yielding a substantial correlation bias of $\epsilon = 0.50$ across all three LFSRs.
+
+\subsection{The Geffe Generator}
+The Geffe generator uses one LFSR as a multiplexer to select between the other two. Its ANF is:
+\begin{equation}
+    f_{geffe}(x_1, x_2, x_3) = x_1 x_2 \oplus (1 \oplus x_1) x_3
+\end{equation}
+This generator is infamous for asymmetric correlation. The selecting LFSR ($x_1$) has no linear correlation ($p=0.50$), rendering it immune to direct basic correlation attacks. However, the selected LFSRs ($x_2, x_3$) exhibit $p = 0.75$. Our attack framework dynamically handles this asymmetry by focusing the pruning parameters on the vulnerable registers.
+
+\subsection{Binary Symmetric Channel (BSC) Degraded Mode}
+To simulate more resilient, modern combining functions that achieve correlation immunity close to Siegenthaler's bound, we implement a BSC noise overlay. By subjecting the keystream to artificial bit-flip noise with crossover probability $q$, we can seamlessly lower the effective correlation to any arbitrary target $p_{target}$. The required noise level is derived as:
+\begin{equation}
+    q = \frac{p_{orig} - p_{target}}{2 p_{orig} - 1}
+\end{equation}
+This allows us to evaluate the attack at weak correlation limits, such as $p = 0.56$ ($\epsilon = 0.12$).
+
+\section{Mathematical Foundation}
+\label{sec:math_foundation}
+
+\subsection{LFSR Output as a Linear Function}
+Let the constituent LFSR have length $L$ and an initial state (seed) represented as an $L$-bit vector $s$. The output sequence $x_t(s) \in \{0, 1\}$ for $t = 0, \dots, N-1$ can be expressed as a linear inner product over GF(2):
+\begin{equation}
+    x_t(s) = g_t \cdot s \pmod 2
+\end{equation}
+where $g_t$ is an $L$-bit connection vector. 
+For the first $L$ clock cycles ($t < L$), $g_t$ is simply the $t$-th standard basis vector (an identity row). For $t \geq L$, $g_t$ evolves according to the LFSR's state transition matrix $A$, specifically via the transpose recurrence $g_t = A^T g_{t-1}$. 
+
+\subsection{Correlation in the Spectral Domain}
+Let the combining generator output a keystream $z_t \in \{0, 1\}$. In the bipolar domain ($\pm 1$), the correlation score $C(s)$ over $N$ bits for a specific seed $s$ is defined as the sum of agreements minus disagreements:
+\begin{equation}
+    C(s) = \sum_{t=0}^{N-1} (-1)^{z_t \oplus x_t(s)} = \sum_{t=0}^{N-1} (-1)^{z_t \oplus (g_t \cdot s)}
+\end{equation}
+
+\subsection{Reformulation via Walsh-Hadamard Transform}
+Computing $C(s)$ naively for all $s$ takes $\mathcal{O}(N 2^L)$. To optimize this, we map the problem to the Walsh spectral domain. We define a spectral accumulator function $f(x)$ mapping $\{0, \dots, 2^L-1\} \to \mathbb{R}$:
+\begin{equation}
+    f(x) = \sum_{t=0}^{N-1} \begin{cases} 
+      (-1)^{z_t} & \text{if } g_t = x \\
+      0 & \text{otherwise}
+   \end{cases}
+\end{equation}
+The accumulator $f(x)$ simply aggregates the signed keystream bits at the index corresponding to the integer value of the connection vector $g_t$. 
+
+The Walsh-Hadamard Transform (WHT) of $f(x)$ evaluated at an index $s$ is:
+\begin{equation}
+    \hat{C}(s) = \text{WHT}(f)[s] = \sum_{x=0}^{2^L-1} f(x) (-1)^{x \cdot s}
+\end{equation}
+Substituting the definition of $f(x)$, it is straightforward to see that $\text{WHT}(f)[s]$ is mathematically identical to $C(s)$. By applying the Fast WHT (FWHT) algorithm via butterfly operations, we can compute the exact correlation for all $2^L$ seeds simultaneously in $\mathcal{O}(L 2^L)$ time.
+
+\section{Stage 1: WHT Spectral Pruning}
+\label{sec:stage_1}
+
+Applying the WHT to the full keystream $N$ provides exact correlations but requires $\mathcal{O}(N \times L + L 2^L)$ time, failing to break the linear dependency on $N$. 
+
+In Stage 1, we aggressively truncate the keystream to a much smaller length $N_1$ ($N_1 \ll N$). We construct the spectral accumulator $f(x)$ using only the first $N_1$ connection vectors $g_0, \dots, g_{N_1-1}$. 
+After applying the FWHT, we obtain coarse spectral coefficients:
+\begin{equation}
+    W(s) = \sum_{t=0}^{N_1-1} (-1)^{z_t \oplus x_t(s)}
+\end{equation}
+We then rank the absolute values $|W(s)|$ and select the top $M$ candidates. A mathematically optimal and empirically verified choice for the pruning hyperparameter is $M = \lfloor \sqrt{2^L} \rfloor$. This reduces the search space quadratically (e.g., from 33.5 million to 5,792 at $L=25$) while mathematically ensuring the survival of the correct seed.
+
+\section{Stage 2 \& 3: Precise Correlation and Verification}
+\label{sec:stage_2}
+
+\subsection{Stage 2: Precise Refinement}
+The coarse pruning step eliminates $2^L - M$ incorrect candidates. In Stage 2, the surviving $M$ candidates undergo a strict evaluation using the full keystream of length $N$. 
+
+For each surviving seed $s \in \{s_1, \dots, s_M\}$, we generate the full LFSR sequence $x_t(s)$ for $N$ clock cycles and compute the exact correlation score $C_{exact}(s)$. Because $M$ is extremely small (sub-linear with respect to the state space), this phase executes almost instantaneously, requiring only $\mathcal{O}(M \times N)$ operations. The seeds are ranked, and the top $K$ (e.g., $K=5$) are preserved.
+
+\subsection{Stage 3: Combinatorial Verification}
+Once the top $K$ candidates for each of the constituent LFSRs are identified, we perform a combinatorial cross-check. For a cipher consisting of 3 LFSRs, there are exactly $K^3$ combinations (e.g., $5^3 = 125$). For each combination, we synthesize the combined keystream and match it against the observed keystream $z_t$. A perfect match confirms the full internal state recovery. This $\mathcal{O}(K^3 \times N)$ step is computationally trivial.
+
+\section{Algorithm Pseudocode}
+\label{sec:pseudocode}
+
+The procedural logic of the proposed Cascade WHT algorithm is detailed in Algorithm~\ref{alg:pruning} and Algorithm~\ref{alg:cascade}.
+
+\begin{algorithm}[h]
+\caption{Stage 1: WHT Spectral Pruning}
+\label{alg:pruning}
+\begin{algorithmic}[1]
+\Require Keystream $z_t$, LFSR taps, partial length $N_1$, retain count $M$
+\Ensure Top $M$ candidate seeds
+\State Initialize connection vectors $g_t$ for $t \in \{0, \dots, N_1-1\}$
+\State Initialize accumulator array $f$ of size $2^L$ to zeros
+\For{$t = 0$ \textbf{to} $N_1 - 1$}
+    \State $index \gets \text{integer\_value}(g_t)$
+    \State $f[index] \gets f[index] + (1 - 2 \cdot z_t)$ \Comment{Accumulate signed bit}
+\EndFor
+\State $W \gets \text{FastWalshHadamardTransform}(f)$
+\State $W[0] \gets 0$ \Comment{Seed 0 is invalid for LFSRs}
+\State $survivors \gets \text{Indices of top } M \text{ elements in } |W|$
+\State \Return $survivors$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[h]
+\caption{Two-Stage Cascade WHT Correlation Attack}
+\label{alg:cascade}
+\begin{algorithmic}[1]
+\Require Full Keystream $z_t$ of length $N$, target correlation $p$
+\State Calculate adaptive $N_1$ based on $L$ and $p$ (Theorem 1)
+\State $M \gets \lfloor \sqrt{2^L} \rfloor$
+\State \textbf{Stage 1:}
+\State $survivors \gets \text{WHT\_Spectral\_Pruning}(z_t, taps, N_1, M)$
+\State \textbf{Stage 2:}
+\For{each $s \in \text{survivors}$}
+    \State Generate full LFSR output $x(s)$ for $N$ bits
+    \State $C_{exact}[s] \gets \sum_{t=0}^{N-1} (-1)^{z_t \oplus x_t(s)}$
+\EndFor
+\State \textbf{Stage 3:}
+\State Rank survivors by $C_{exact}$ and extract Top $K$
+\State Verify combinations across all LFSRs to find the global secret key.
+\end{algorithmic}
+\end{algorithm}
+
+\section{Theoretical Analysis: Pruning Survival Theorem}
+\label{sec:pruning_theorem}
+
+The absolute success of the cascade architecture is predicated on a singular condition: the correct seed $s^*$ \textit{must} survive the Stage 1 spectral pruning. We establish formal probabilistic bounds for this survival event.
+
+\subsection{Distributional Model}
+Under standard cryptographic assumptions of pseudo-randomness, each bit of the keystream matches the correct LFSR sequence $x_t(s^*)$ with probability $p$. The corresponding bipolar variable $Y_t = (-1)^{z_t \oplus x_t(s^*)}$ has an expected value $E[Y_t] = 2p-1 = \epsilon$ and a variance of $\text{Var}[Y_t] = 1-\epsilon^2$.
+
+\textbf{Lemma 1 (Distribution of Correct Seed).} By the Central Limit Theorem, since the variables are independent and identically distributed, the WHT coefficient for the correct seed follows a normal distribution:
+\begin{equation}
+    W(s^*) = \sum_{t=0}^{N_1-1} Y_t \sim \mathcal{N}\left(N_1 \epsilon, N_1(1-\epsilon^2)\right)
+\end{equation}
+
+\textbf{Lemma 2 (Distribution of Incorrect Seeds).} For any incorrect seed $s \neq s^*$, the output $x_t(s)$ is a pseudo-random sequence cryptographically uncorrelated with $z_t$. Consequently, $E[Y_t] \approx 0$ and $\text{Var}[Y_t] \approx 1$. Thus:
+\begin{equation}
+    W(s) \sim \mathcal{N}(0, N_1)
+\end{equation}
+
+\subsection{Pruning Threshold and Survival Theorem}
+To survive pruning, $|W(s^*)|$ must exceed the threshold $\tau$ defined by the $(2^L - M)$-th order statistic of the incorrect seeds' half-normal distribution.
+
+\textbf{Lemma 3 (Pruning Threshold).} Using classical extreme value theory approximations, the threshold is:
+\begin{equation}
+    \tau(N_1, L, M) = \sqrt{N_1} \cdot \Phi^{-1}\left(1 - \frac{M}{2 \cdot 2^L}\right)
+\end{equation}
+where $\Phi^{-1}$ is the inverse standard normal CDF.
+
+\textbf{Theorem 1 (Pruning Survival Probability).} The probability that the correct seed $s^*$ survives WHT spectral pruning and is retained among the top $M$ candidates is:
+\begin{equation}
+    P_{survive}(N_1, L, M, p) = \Phi\left( \frac{N_1 \epsilon - \tau}{\sqrt{N_1(1-\epsilon^2)}} \right)
+\end{equation}
+
+\textit{Proof.} The correct seed survives if and only if $W(s^*) > \tau$ (approximating $|W| \approx W$ for large positive means). Since $W(s^*) \sim \mathcal{N}\left(N_1 \epsilon, N_1(1-\epsilon^2)\right)$, standardizing the variable relative to the threshold $\tau$ yields the probability directly from the standard normal cumulative density function. $\blacksquare$
+
+\textbf{Corollary 1 (Sufficient Condition on $N_1$).} For a target survival probability of $1 - \delta$ and fixing $M = \sqrt{2^L}$, the minimum required partial keystream $N_1$ scales as:
+\begin{equation}
+    N_1 = \Omega\left( \frac{L}{\epsilon^2} \right) = \Omega\left( \frac{L}{(2p-1)^2} \right)
+\end{equation}
+\textit{Proof Sketch.} Substituting $\tau \approx \sqrt{2 N_1 \ln(2^L/M)}$ (via Gaussian tail approximation) into the theorem and solving for $N_1$ demonstrates that the required keystream length is proportional to the LFSR length $L$ and inversely proportional to the square of the correlation bias $\epsilon^2$.
+
+This corollary is profound: it permits extremely aggressive truncation of the keystream for higher $p$ values, enabling the massive speedups observed in Stage 1.
+
+\section{Complexity Analysis and The Memory Wall}
+\label{sec:complexity}
+
+\subsection{Time Complexity}
+The computational complexity of the Two-Stage Cascade WHT Attack is radically lower than prior methods due to its sub-linear scaling with $N$. 
+
+\begin{itemize}
+    \item \textbf{Stage 1 (Pruning):} Constructing the accumulator takes $\mathcal{O}(N_1 \cdot L)$ using vectorised sparse updates. The FWHT computation requires strictly $\mathcal{O}(L \cdot 2^L)$ operations.
+    \item \textbf{Stage 2 (Refinement):} Evaluating exactly $M$ candidates against $N$ bits takes $\mathcal{O}(M \cdot N)$ operations.
+    \item \textbf{Stage 3 (Verification):} Checking the top $K$ combinations across 3 LFSRs requires $\mathcal{O}(K^3 \cdot N)$ operations.
+\end{itemize}
+
+Since $N_1 \ll N$, $K$ is a tiny constant, and $M = \sqrt{2^L}$, the total asymptotic time complexity per LFSR simplifies to:
+\begin{equation}
+    \mathcal{O}\left(L \cdot 2^L + \sqrt{2^L} \cdot N\right)
+\end{equation}
+
+Table~\ref{tab:complexity_comparison} compares this against classical methods. Crucially, as $N$ grows (which is standard to ensure unique decipherability in cryptography), the $\sqrt{2^L} \cdot N$ term dominates, ensuring that the total runtime is heavily decoupled from $N$ when compared to the $\mathcal{O}(N 2^L)$ exhaustive search.
+
+\begin{table}[h]
+\centering
+\caption{Theoretical Complexity Comparison for Correlation Attacks}
+\label{tab:complexity_comparison}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Attack Method} & \textbf{Time Complexity} & \textbf{Memory Complexity} & \textbf{Scales with $N$?} \\ \midrule
+Exhaustive (Siegenthaler) & $\mathcal{O}(N \cdot 2^L)$ & $\mathcal{O}(1)$ & Linear ($\mathcal{O}(N)$) \\
+Fast Correlation (Meier) & $\mathcal{O}(N \cdot W \cdot I)$ & $\mathcal{O}(N)$ & Sub-exponential \\
+Bulk WHT (Chose et al.) & $\mathcal{O}(N \cdot L + L \cdot 2^L)$ & $\mathcal{O}(2^L)$ & Linear ($\mathcal{O}(N)$) \\
+\textbf{Cascade WHT (Ours)} & $\mathbf{\mathcal{O}(L \cdot 2^L + \sqrt{2^L} \cdot N)}$ & $\mathbf{\mathcal{O}(2^L)}$ & \textbf{Sub-linear ($\mathcal{O}(\sqrt{2^L})$)} \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Memory Complexity and the ``Memory Wall''}
+While the time complexity is vastly improved, the spatial complexity constitutes the primary limitation of this algorithm. The FWHT requires a contiguous array of size $2^L$ to store the accumulator $f(x)$ and perform in-place butterfly computations. 
+
+Assuming standard 64-bit (8-byte) double-precision floats to prevent overflow during spectral accumulation, the memory footprint scales exactly as $8 \times 2^L$ bytes. 
+
+\begin{itemize}
+    \item At $L=14$ (Toy scale), the requirement is $128$ KB.
+    \item At $L=20$, the requirement is $8$ MB.
+    \item At $L=25$ (Our research target), the requirement is $256$ MB, which fits comfortably in modern L3 CPU caches or general RAM.
+    \item At $L=30$, the requirement hits $8$ GB.
+    \item At $L=32$, the requirement reaches $32$ GB.
+\end{itemize}
+
+The parameter $L=30$ represents a practical ``Memory Wall'' for standard commercial workstation hardware. For target stream ciphers where individual LFSRs exceed 32 bits (such as the A5/1 cipher used in GSM), direct monolithic WHT is infeasible. To mount the attack, mitigation strategies such as \textit{chunked WHT evaluation} (breaking the $2^L$ WHT into $2^c$ parallel WHTs of size $2^{L-c}$) or partial hybrid exhaustion must be employed. 
+
+\section{Novelty Statement}
+\label{sec:novelty}
+
+It is crucial to formally differentiate this work from the bulk WHT cryptanalysis introduced by Chose, Joux, and Mitton (CJM) in 2002. The CJM algorithm applied the Fast Walsh-Hadamard Transform across the \textit{full} keystream $N$ to identify the single best exact correlation, effectively achieving a time complexity of $\mathcal{O}(N L + L 2^L)$.
+
+The profound novelty of our approach lies in repurposing the WHT as a \textit{coarse spectral filter} rather than an exact correlator. By formally establishing via the Pruning Survival Theorem that $N_1 \ll N$ keystream bits are theoretically sufficient to elevate the correct seed into a subset of $M$ candidates, we enable a multi-stage cascade architecture. This decouples the available keystream length $N$ from the exponential WHT execution time, shifting the dominant scaling factor from a multiplicative $N \times 2^L$ to an additive $\sqrt{2^L} \times N$. Furthermore, Theorem 1 provides the first rigorous mathematical framework to dynamically tune $N_1$ and $M$ strictly based on the cipher properties $L$ and $p$, ensuring optimal empirical performance backed by formal probability guarantees.

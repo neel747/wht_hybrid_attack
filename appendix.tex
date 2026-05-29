@@ -1,0 +1,81 @@
+\chapter{Appendix}
+\label{ch:appendix}
+
+This appendix provides additional documentation, core code listings, and verification details that supplement the main body of the thesis.
+
+\section{Core Implementation of the Cascade WHT Attack}
+\label{sec:code_listing}
+
+Below is the Numba-optimized, vectorised Python core implementation of Stage 1 (Spectral Accumulation and Fast Walsh-Hadamard Transform) of the Cascade WHT Attack.
+
+\begin{singlespace}
+\begin{lstlisting}[language=Python, caption={Core implementation of the Cascade WHT spectral accumulator and pruning step.}]
+import numpy as np
+from numba import njit, prange
+
+@njit(parallel=True)
+def fast_wht(a):
+    """
+    In-place Fast Walsh-Hadamard Transform using butterfly operations.
+    Complexity: O(L * 2^L)
+    """
+    n = len(a)
+    h = 1
+    while h < n:
+        for i in prange(0, n, h * 2):
+            for j in range(i, i + h):
+                x = a[j]
+                y = a[j + h]
+                a[j] = x + y
+                a[j + h] = x - y
+        h *= 2
+    return a
+
+def stage1_spectral_pruning(keystream, connection_vectors, L, M):
+    """
+    Stage 1: Spectral accumulation and pruning using FWHT.
+    """
+    N1 = len(keystream)
+    # Convert keystream bits to signed values (-1 or +1)
+    ks_signed = 1 - 2 * keystream.astype(np.float64)
+    
+    # 2^L accumulator bins
+    f = np.zeros(2**L, dtype=np.float64)
+    
+    # Vectorized accumulation of connection vectors
+    # connection_vectors is an array of indices corresponding to the connection states
+    np.add.at(f, connection_vectors, ks_signed)
+    
+    # Execute FWHT in-place
+    F = fast_wht(f)
+    
+    # Prune search space to M candidates
+    abs_scores = np.abs(F)
+    top_candidates = np.argsort(abs_scores)[-M:][::-1]
+    
+    return top_candidates, abs_scores[top_candidates]
+\end{lstlisting}
+\end{singlespace}
+
+\section{Monte Carlo Survival Validation Data}
+\label{sec:mc_validation_data}
+
+Table~\ref{tab:mc_validation} summarizes the empirical validation results comparing the theoretical prediction from the Pruning Survival Theorem against $500$ independent Monte Carlo simulation runs for a register of length $L=20$ and target candidates $M=1024$.
+
+\begin{table}[h!]
+\centering
+\caption{Empirical vs. Theoretical Survival Rates ($L=20$, $M=1024$, $500$ Trials)}
+\label{tab:mc_validation}
+\begin{tabular}{ccccc}
+\toprule
+Bias $p$ & Prefix Length $N_1$ & Theoretical $P_{\text{survive}}$ & Empirical Success Rate & 95\% Confidence Interval \\
+\midrule
+0.75  & 100 & 93.42\% & 94.20\% & $[91.80\%, 96.10\%]$ \\
+0.75  & 150 & 99.88\% & 100.00\% & $[99.20\%, 100.00\%]$ \\
+0.625 & 400 & 88.15\% & 87.80\% & $[84.50\%, 90.60\%]$ \\
+0.625 & 600 & 99.64\% & 99.80\% & $[98.80\%, 100.00\%]$ \\
+0.56  & 1800 & 90.23\% & 91.00\% & $[88.20\%, 93.30\%]$ \\
+0.56  & 2600 & 99.78\% & 100.00\% & $[99.20\%, 100.00\%]$ \\
+\bottomrule
+\end{tabular}
+\end{table}

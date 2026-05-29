@@ -1,0 +1,58 @@
+\chapter{Conclusion and Future Scope}
+\label{ch:conclusion}
+
+This final chapter summarizes the research findings, highlights the primary contributions of this thesis, identifies the limitations of the proposed approach, and outlines prospective directions for future research in the field of stream cipher cryptanalysis.
+
+\section{Summary of Work}
+\label{sec:summary_of_work}
+
+This thesis addressed the critical computational gap between standard exhaustive correlation attacks ($\mathcal{O}(N \cdot 2^L)$) and the Meier-Staffelbach Fast Correlation Attack (FCA) on Linear Feedback Shift Register (LFSR) combining generators. While Siegenthaler's exhaustive attack is guaranteed to succeed but scales poorly with keystream length $N$, the FCA is highly efficient but dependent on the availability of low-weight parity-check equations, failing completely when these equations cannot be generated within short keystream boundaries.
+
+To address this, we proposed, implemented, and validated the **Two-Stage Cascade Walsh-Hadamard Transform (WHT) Correlation Attack**. The proposed architecture utilizes a cascade pipeline to break the linear dependency of the search phase on the keystream length $N$:
+\begin{enumerate}
+    \item \textbf{Stage 1 (Spectral Pruning):} Repurposes the Walsh-Hadamard Transform as a coarse spectral filter on a truncated keystream prefix of length $N_1 \ll N$. By computing the correlation spectrum for all $2^L$ seeds simultaneously in $\mathcal{O}(L \cdot 2^L)$ operations, the search space is quadratically pruned to a set of $M = \sqrt{2^L}$ candidate seeds.
+    \item \textbf{Stage 2 (Precise Correlation):} Performs exact correlation evaluations using the full keystream $N$ only on the surviving $M$ candidates.
+    \item \textbf{Stage 3 (Combinatorial Verification):} Combines the top candidates across the constituent registers to recover the full internal state in negligible time.
+\end{enumerate}
+
+Empirical evaluations at the research-grade scale of $L=25$ bits (75-bit total key space) confirmed that the Cascade WHT attack successfully recovers the initial states in milliseconds. The attack achieved an empirical speedup of **$102.38\times$** over standard exhaustive correlation at $N=1500$, while the Meier-Staffelbach FCA failed completely ($0\%$ success) due to the lack of low-weight parity checks at this scale.
+
+\section{Research Contributions}
+\label{sec:contributions}
+
+The primary contributions of this research are:
+\begin{itemize}
+    \item \textbf{Novel WHT Pruning Concept:} Shifting the role of the Walsh-Hadamard Transform from a bulk exact correlation calculator (as in prior work by Chose, Joux, and Mitton) to a coarse spectral filter. This concept decouples the exhaustive search space from the keystream length $N$.
+    \item \textbf{The Pruning Survival Theorem:} Establishing a closed-form probabilistic model to predict the survival rate of the correct seed in the Stage 1 pruning phase. The model was validated via Monte Carlo simulations of 500 trials per point, showing a near-perfect fit with empirical results.
+    \item \textbf{Theory-Driven Parameter Selection:} Deriving a sufficient condition for the prefix length ($N_1 = \Omega(L / \epsilon^2)$), allowing the attack parameters to self-tune and operate reliably in the high-success region.
+    \item \textbf{Rigorous 3-Way Comparison Framework:} Constructing a JIT-compiled benchmarking environment that ensures timing speedups reflect fundamental algorithmic differences rather than programming language overhead.
+\end{itemize}
+
+\section{Limitations of the Proposed Attack}
+\label{sec:limitations}
+
+Despite its timing advantages, the Cascade WHT attack has several limitations:
+\begin{itemize}
+    \item \textbf{The Memory Wall:} The FWHT butterfly algorithm requires an in-memory array of size $2^L$. Storing double-precision floats requires $8 \cdot 2^L$ bytes of RAM. This limits the direct application of the attack to $L \le 30$ on commodity workstations (requiring 8 GB of RAM), representing a physical space barrier.
+    \item \textbf{Correlation Requirement:} The attack assumes that a non-zero correlation bias ($\epsilon > 0$) exists between the keystream and the individual LFSR outputs. It cannot directly attack fully correlation-immune combining functions without first guessing state bits or exploiting asymmetric leakage.
+    \item \textbf{Irregular Clocking Constraints:} The precomputation of the connection vectors $g_t$ assumes a linear state evolution. For ciphers that utilize irregular clocking (such as A5/1), the WHT spectral accumulator cannot be directly applied without first executing a hybrid clock-guessing step.
+\end{itemize}
+
+\section{Future Scope}
+\label{sec:future_scope}
+
+Several directions can expand the applicability and efficiency of the proposed attack:
+\subsection{Bypassing the Memory Wall}
+For LFSRs with lengths $L > 30$, memory-efficient variants of the FWHT must be developed. One approach is the **Chunked WHT**, which partitions the state space into $2^c$ sub-segments and executes smaller WHTs sequentially. Additionally, hybrid exhaustion models can search $c$ bits of the seed classically and execute a smaller $2^{L-c}$ WHT on the remaining state space, balancing time and memory limits.
+
+\subsection{GPU and Hardware Acceleration}
+The butterfly stages of the Fast WHT consist of independent vector additions and subtractions. This structure is highly parallelizable. Offloading Stage 1 to a GPU using CUDA or OpenCL could leverage thousands of cores to compute the correlation spectrum of larger registers (e.g., $L=28$) in microseconds, shifting the bottleneck entirely to system memory bus widths.
+
+\subsection{Extension to Filtering Generators}
+In a filtering generator, a single LFSR's state is passed through a non-linear boolean filter function. If the filter function is not correlation-immune, correlation bias leaks into the keystream. The Cascade WHT attack can be adapted to prune the state space of filtering generators by mapping the linear approximations of the boolean filter to the spectral accumulator.
+
+\subsection{Hybrid Cryptanalytic Pipelines}
+The cascade pipeline can be combined with other cryptanalytic methods. For example, Stage 1 pruning could select a candidate set $M$, and instead of standard correlation in Stage 2, an algebraic attack could be mounted on the reduced state space, utilizing linearization techniques on a smaller system of equations.
+
+\subsection{Attacks on Irregularly-Clocked Ciphers}
+For ciphers like GSM A5/1, future work should develop a unified hybrid framework. By guessing the clocking control bits for a small initial window, the connection vectors can be fixed, allowing WHT pruning to target the linear registers. This would provide a complete key recovery pipeline that executes in milliseconds.

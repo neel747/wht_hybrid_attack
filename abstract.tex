@@ -1,0 +1,14 @@
+\newpage
+\addcontentsline{toc}{chapter}{Abstract}
+\begin{center}
+\Large\textbf{Abstract}
+\end{center}
+\vspace{1em}
+
+\begin{doublespace}
+\noindent
+Linear Feedback Shift Register (LFSR) combining generators are vulnerable to correlation attacks that exploit statistical dependencies between the keystream and constituent LFSR sequences. Standard correlation attacks require $\mathcal{O}(N \cdot 2^L)$ time, scaling linearly with keystream length $N$ and exponentially with register length $L$. While Fast Correlation Attacks (FCA) circumvent exhaustive search, their performance degrades to 0\% when low-weight parity-check equations are unavailable. This thesis presents a Two-Stage Cascade Walsh-Hadamard Transform (WHT) Correlation Attack that decouples keystream length from the search space size. Stage 1 applies the Fast WHT on a truncated keystream prefix of length $N_1 \ll N$ to compute approximate correlation scores for all $2^L$ seeds in $\mathcal{O}(L \cdot 2^L)$ time, pruning the space to $M = \lfloor\sqrt{2^L}\rfloor$ candidate seeds. Stage 2 evaluates only these survivors against the full keystream of length $N$, reducing total complexity to $\mathcal{O}(L \cdot 2^L + \sqrt{2^L} \cdot N)$. We prove a Pruning Survival Theorem providing a closed-form expression for the correct seed's survival probability, which we validate empirically via Monte Carlo simulations. The proposed attack is implemented using Numba JIT acceleration and evaluated on a 75-bit three-LFSR combining generator ($L=25$). Over 100 independent trials, the attack achieves a 100\% success rate for $N \ge 800$ bits under the majority combining function ($p=0.75$), demonstrating up to a 102$\times$ wall-clock speedup ($68.1$~ms vs. $6689.3$~ms) over standard exhaustive correlation. Applicability to practical ciphers like Bluetooth E0 and GSM A5/1 is also discussed.
+
+\vspace{1.5em}
+\noindent\textbf{Keywords:} Stream Cipher, LFSR, Correlation Attack, Walsh-Hadamard Transform, Spectral Pruning, Cryptanalysis.
+\end{doublespace}

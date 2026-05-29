@@ -1,0 +1,226 @@
+\chapter{Literature Survey}
+\label{ch:literature_survey}
+
+\section{The Correlation Attack (Siegenthaler, 1985)}
+\label{sec:siegenthaler_attack}
+
+The classic correlation attack, introduced by Thomas Siegenthaler in 1985 \cite{siegenthaler1985}, represents the foundational divide-and-conquer cryptanalysis technique against stream ciphers constructed from nonlinear combining generators. 
+
+\subsection{Core Concept and Divide-and-Conquer Strategy}
+A combining generator runs $k$ parallel Linear Feedback Shift Registers (LFSRs) whose output sequences $x_1^{(t)}, x_2^{(t)}, \dots, x_k^{(t)}$ are combined via a nonlinear Boolean function $f(x_1, x_2, \dots, x_k)$ to produce the keystream $y_t$. Under a brute-force attack model, the cryptanalyst must search the joint state space of all registers, requiring the evaluation of:
+$$\prod_{i=1}^k (2^{L_i} - 1) \approx 2^{\sum_{i=1}^k L_i}$$
+possible initial states, which becomes computationally infeasible even for moderate key sizes (e.g., $L = 75$ bits).
+
+Siegenthaler's key insight was that if the combining function $f$ is not correlation-immune of order $1$, there exists a statistical correlation between the keystream $y_t$ and at least one of the individual LFSR outputs $x_i^{(t)}$. Specifically, the probability $p_i$ that the keystream equals the output of the $i$-th LFSR is:
+\begin{equation}
+P(y_t = x_i^{(t)}) = p_i = \frac{1}{2} + \epsilon_i \neq \frac{1}{2}
+\label{eq:correlation_prob}
+\end{equation}
+where $\epsilon_i$ represents the correlation bias. Under the Known-Plaintext Attack (KPA) model, the cryptanalyst can isolate the $i$-th register and recover its initial state $\mathbf{S}_0^{(i)}$ independently of the other registers. This divide-and-conquer approach reduces the search space complexity from exponential in the sum of the register lengths to exponential in the individual register lengths:
+$$\text{Complexity} = \sum_{i=1}^k 2^{L_i} \ll 2^{\sum_{i=1}^k L_i}$$
+
+\subsection{Mathematical Formulation and Success Conditions}
+For a target register of length $L$ with a primitive feedback polynomial, the cryptanalyst tests each of the $2^L-1$ non-zero initial seeds. For each candidate seed $s$, the LFSR sequence $x^{(t)}(s)$ of length $N$ is generated and compared against the observed keystream $y_t$. The correlation is evaluated using the Hamming distance or the sign-representation sum:
+\begin{equation}
+C(s) = \sum_{t=0}^{N-1} (-1)^{x^{(t)}(s) \oplus y_t}
+\label{eq:exhaustive_correlation_sum}
+\end{equation}
+If $s$ is the correct seed $s^*$, the expected value of $C(s^*)$ is:
+$$\mathbb{E}[C(s^*)] = N(2p - 1) = 2N\epsilon$$
+For a wrong seed $s \neq s^*$, the sequence $x^{(t)}(s)$ is statistically independent of $y_t$, behaving like random coin tosses with expected value:
+$$\mathbb{E}[C(s)] = 0 \quad (\text{with variance } \text{Var}[C(s)] = N)$$
+To successfully distinguish the correct seed from the $2^L-2$ incorrect candidates, the keystream length $N$ must be large enough so that the signal $2N\epsilon$ exceeds the noise fluctuations of the wrong seeds. According to Siegenthaler's derivation, the minimum keystream length $N_{\text{min}}$ required to guarantee state recovery with high probability is:
+\begin{equation}
+N_{\text{min}} \approx \frac{L \ln 2}{2\epsilon^2} = \frac{L \ln 2}{2(2p-1)^2}
+\label{eq:siegenthaler_limit}
+\end{equation}
+At $L = 25$ and $p = 0.75$ ($\epsilon = 0.50$), $N_{\text{min}}$ is approximately $35$ bits. However, in practice, larger values ($N \ge 200$) are used to prevent false positives. The time complexity of this attack is $O(N \cdot 2^L)$, which scales linearly with the keystream length $N$ and exponentially with the register length $L$.
+
+\section{The Fast Correlation Attack (FCA)}
+\label{sec:fast_correlation_attacks}
+
+To bypass the exponential $2^L$ computational complexity of Siegenthaler's exhaustive correlation search, Meier and Staffelbach in 1989 introduced the Fast Correlation Attack (FCA) \cite{meier1989}. This class of attacks reformulates state recovery as a decoding problem over a Binary Symmetric Channel (BSC).
+
+\subsection{The BSC Model and Parity-Check Generation}
+In the FCA framework, the target LFSR output sequence $x_t$ is modeled as the transmission codeword, and the observed keystream $y_t$ is the received sequence corrupted by noise $e_t$:
+\begin{equation}
+y_t = x_t \oplus e_t
+\end{equation}
+where the crossover probability is $q = 1 - p$. The noise bits $e_t$ are modeled as independent and identically distributed (i.i.d.) random variables with $P(e_t = 1) = q$.
+
+Because the LFSR sequence is governed by a characteristic feedback polynomial $C(x)$ of degree $L$, it satisfies the linear recurrence relation. By finding polynomial multiples of the characteristic polynomial:
+\begin{equation}
+G(x) = C(x) \cdot A(x) = x^{d_k} \oplus x^{d_{k-1}} \oplus \dots \oplus x^{d_0}
+\end{equation}
+where $G(x)$ has low weight $W$ (typically $W = 3$ or $W = 5$), the cryptanalyst can construct low-weight parity-check equations. For each time step $t$, the relation holds:
+\begin{equation}
+x_{t+d_k} \oplus x_{t+d_{k-1}} \oplus \dots \oplus x_{t+d_0} = 0 \pmod{2}
+\label{eq:parity_check_relation}
+\end{equation}
+Substituting $x_t = y_t \oplus e_t$ into Equation \ref{eq:parity_check_relation} yields a parity-check equation containing only observed keystream bits and noise variables:
+\begin{equation}
+y_{t+d_k} \oplus y_{t+d_{k-1}} \oplus \dots \oplus y_{t+d_0} = e_{t+d_k} \oplus e_{t+d_{k-1}} \oplus \dots \oplus e_{t+d_0}
+\label{eq:keystream_parity_check}
+\end{equation}
+
+For any given bit position $t$, if the cryptanalyst collects $m$ independent parity-check equations, they can estimate the probability that the observed keystream bit $y_t$ is equal to the true LFSR bit $x_t$.
+
+\subsection{Iterative Bit-Flipping Decoding}
+Meier and Staffelbach proposed an iterative decoding algorithm to recover the LFSR sequence:
+\begin{enumerate}
+    \item \textbf{Probability Initialization:} Set the initial probability that $y_t$ is correct to $p^{(0)} = p = 1 - q$.
+    \item \textbf{Parity Evaluation:} For each bit $t$, evaluate the $m$ parity checks. Let $s_j \in \{0, 1\}$ be the value of the $j$-th parity check sum.
+    \item \textbf{Probability Update:} Update the probability $p_t^{(k)}$ at iteration $k$ based on how many parity checks are satisfied. If a majority of the checks are satisfied, $p_t^{(k)}$ increases; if unsatisfied, it decreases.
+    \item \textbf{Bit Flipping:} Flip the bits $y_t$ whose probabilities of correctness fall below a threshold (typically $0.5$).
+    \item \textbf{Convergence Check:} Repeat until the sequence satisfies all parity checks or a maximum number of iterations is reached.
+\end{enumerate}
+
+\subsection{Limitations and the Dependency on Low-Weight Multiples}
+While the time complexity of FCA is sub-exponential ($O(N \cdot \text{checks} \cdot \text{iterations})$), its performance depends on the number of low-weight parity-check equations ($m$) that can be generated.
+The number of weight-$W$ multiples of a polynomial of degree $L$ that can be found in a keystream of length $N$ is roughly:
+\begin{equation}
+m \approx \frac{N^{W-2}}{2^{L-1}}
+\end{equation}
+    \item \textbf{Toy Scale ($L \le 14$):} At $L=14$ and $N=1500$, $m$ is large, and FCA converges rapidly.
+    \item \textbf{Research Scale ($L \ge 25$):} At $L=25$ and $N=1500$, $m$ drops to near-zero for weight $W=3$ or $W=5$ polynomials. 
+\end{itemize}
+
+Without a sufficient number of parity-check equations, the iterative decoder fails to converge, resulting in a success rate of \textbf{$0\%$}. This represents the primary vulnerability of Fast Correlation Attacks.
+
+\section{Improved Fast Correlation and Decoding-Based Attacks}
+\label{sec:improved_fca}
+
+Following Meier and Staffelbach's work, several improvements were introduced to strengthen decoding-based correlation attacks under low-correlation regimes.
+
+\subsection{Canteaut \& Trabbia: Weight-4 and Weight-5 Parity Checks}
+In 2000, Anne Canteaut and M. Trabbia \cite{canteaut2000} improved parity-check generation by searching for weight-4 and weight-5 polynomial multiples. By allowing higher weight equations, they increased the number of available checks $m$, enabling attacks on ciphers with larger LFSRs or lower correlation biases. However, evaluating weight-5 equations increases the decoding complexity and the error rate per check, since the probability that a weight-5 check is satisfied by noise is:
+$$P(\text{satisfied}) = \frac{1 + (2p-1)^4}{2}$$
+which approaches $0.5$ as $p \to 0.5$.
+
+\subsection{Turbo-Code and LDPC-Based decoders}
+Modern fast correlation attacks often treat the LFSR feedback polynomial as a linear block code and apply advanced coding theory techniques:
+\begin{itemize}
+    \item \textbf{LDPC Decoding:} The parity-check equations define a sparse parity-check matrix, allowing the application of belief propagation (sum-product) decoding.
+    \item \textbf{Turbo Decoding:} Formulates the attack using convolutional codes and iterative BCJR decoding.
+\end{itemize}
+These methods improve the decoding threshold (succeeding at lower values of $p$), but they require complex decoding infrastructures and remain limited by the $O(2^{L - \text{dimension}})$ complexity required to generate the underlying parity-check matrices.
+
+\section{WHT-Based Bulk Correlation Attacks (Chose, Joux \& Mitton, 2002)}
+\label{sec:cjm_attack}
+
+In 2002, Philippe Chose, Antoine Joux, and Michel Mitton \cite{chose2002} proposed a unified algorithmic framework for fast correlation attacks. A key contribution of their work was the application of the \textbf{Walsh-Hadamard Transform (WHT)} to perform bulk correlation computations.
+
+\subsection{The WHT as a Parallel Correlation Solver}
+In a standard correlation attack, computing the correlation sum $C(s)$ for all $2^L$ seeds requires independent evaluations, resulting in $O(N \cdot 2^L)$ operations.
+Chose et al. observed that the correlation computation can be mapped to a matrix-vector multiplication over $\mathbb{F}_2^L$, which is equivalent to a Walsh-Hadamard Transform.
+
+Let the output of the LFSR at time $t$ from initial state $\mathbf{S}_0$ be:
+$$x_t = \mathbf{g}_t \cdot \mathbf{S}_0 \pmod{2}$$
+where $\mathbf{g}_t = [1, 0, \dots, 0] \cdot \mathbf{M}^t$ is the connection vector.
+The correlation sum in the sign domain ($\pm 1$) is:
+\begin{equation}
+C(\mathbf{S}_0) = \sum_{t=0}^{N-1} (-1)^{\mathbf{g}_t \cdot \mathbf{S}_0 \oplus y_t} = \sum_{t=0}^{N-1} (-1)^{y_t} (-1)^{\mathbf{g}_t \cdot \mathbf{S}_0}
+\end{equation}
+We define the spectral accumulator function $f: \mathbb{F}_2^L \to \mathbb{R}$ as:
+\begin{equation}
+f(\mathbf{v}) = \sum_{t: \mathbf{g}_t = \mathbf{v}} (-1)^{y_t}
+\label{eq:cjm_accumulator}
+\end{equation}
+The correlation for all possible initial states $\mathbf{S}_0$ is then given by:
+\begin{equation}
+C(\mathbf{S}_0) = \sum_{\mathbf{v} \in \mathbb{F}_2^L} f(\mathbf{v}) (-1)^{\mathbf{v} \cdot \mathbf{S}_0} = \text{WHT}(f)[\mathbf{S}_0]
+\label{eq:wht_spectral_relation}
+\end{equation}
+
+By applying the Fast Walsh-Hadamard Transform (FWHT), the correlation values for all $2^L$ initial states can be computed simultaneously in:
+$$\text{Complexity} = O(N \cdot L + L \cdot 2^L)$$
+operations, replacing the exhaustive $O(N \cdot 2^L)$ search.
+
+\subsection{How CJM Differs from Our Proposed Cascade WHT Attack}
+While Chose, Joux, and Mitton established the mathematical link between correlation attacks and the WHT, their design has two main limitations:
+\begin{enumerate}
+    \item \textbf{Single-Stage Design:} CJM processes the \textbf{entire} keystream length $N$ through the WHT accumulator. For large $N$, the term $N \cdot L$ dominates the preprocessing phase, and the accumulator array $f(\mathbf{v})$ must be updated $N$ times.
+    \item \textbf{No Pruning:} CJM uses the WHT to compute exact correlations and directly output the single maximum peak. This requires the WHT to process a large keystream to guarantee that the correct seed stands out, leading to high processing times.
+\end{enumerate}
+
+\textbf{Our proposed Cascade WHT attack} introduces a two-stage pipeline:
+\begin{itemize}
+    \item Stage 1 uses a \textbf{partial keystream prefix $N_1 \ll N$} to run a coarse WHT, pruning the search space to a candidate pool of size $M = \sqrt{2^L}$.
+    \item Stage 2 evaluates the $M$ survivors using the full keystream length $N$.
+\end{itemize}
+By limiting the WHT to $N_1$ bits, we reduce preprocessing costs and decouple the keystream length $N$ from the $O(L \cdot 2^L)$ WHT complexity, achieving sub-linear scaling with $N$.
+
+\section{Algebraic and Alternative Attacks}
+\label{sec:algebraic_attacks}
+
+Aside from correlation-based methods, combining generators are vulnerable to alternative cryptanalytic models:
+
+\subsection{Algebraic Attacks (Courtois \& Meier, 2003)}
+Algebraic attacks \cite{courtois2003} exploit the low algebraic degree of the combining function $f(x_1, \dots, x_k)$. If an attacker can find a low-degree multivariate relation:
+$$g(x_1, \dots, x_k) \cdot f(x_1, \dots, x_k) = h(x_1, \dots, x_k)$$
+where $g$ and $h$ have low degree, they can construct a system of low-degree polynomial equations in terms of the initial state bits $\mathbf{S}_0$. These equations are solved using linearization (treating each monomial as a new variable) or Gröbner basis algorithms (e.g., F4 or F5). The time complexity is polynomial in the number of variables but depends on the solving degree, making these attacks effective only for functions with low algebraic immunity.
+
+\subsection{Time-Memory-Data Trade-off (TMDTO) Attacks}
+TMDTO attacks (e.g., Babbage-Golic or Biryukov-Shamir) exploit state space collisions. During an offline phase, the attacker generates $M$ random states, computes their corresponding keystream prefixes, and stores them in sorted tables. In the online phase, the attacker observes $D$ keystream bits and searches for a match in the database. A collision occurs when the online keystream matches a precomputed entry, recovering the state in $O(D)$ time. The security is governed by the trade-off relation:
+$$T \cdot M \cdot D = N^2$$
+where $N$ is the state space size. While TMDTO attacks are general, their massive memory requirements ($M \approx 2^{L/2}$) limit their practicality.
+
+\section{Prior Usage of WHT in Cryptanalysis}
+\label{sec:wht_prior_art}
+
+The Walsh-Hadamard Transform is a well-established tool in cryptanalysis, though its applications have been historically confined to specific domains:
+
+\subsection{Boolean Function Analysis}
+The WHT is the standard tool for analyzing the cryptographic properties of Boolean functions. It is used to measure nonlinearity, verify correlation immunity order, and identify linear structures in S-boxes and combining functions.
+
+\subsection{Matsui's Linear Cryptanalysis}
+In block cipher cryptanalysis, Mitsuru Matsui (1993) used the WHT to compute the correlation of linear approximations across block cipher rounds. By finding high-bias linear approximations:
+$$a \cdot P \oplus b \cdot C = c \cdot K$$
+attackers can recover key bits. The WHT is used to evaluate all linear approximations simultaneously.
+
+\subsection{The Gap in the Literature}
+In all prior literature, the WHT is used as an \textbf{exact} solver — either to compute precise correlation values (CJM) or to verify boolean properties.
+There is a gap in the literature regarding the use of WHT on a partial keystream prefix as a \textbf{coarse, lossy spectral filter} to prune candidates. The mathematical proof of the pruning survival rate as a function of the prefix length $N_1$ has not been previously explored.
+
+\section{Comparative Summary of Existing Attacks}
+\label{sec:literature_summary}
+
+Table~\ref{tab:cryptanalysis_comparison} provides a comprehensive comparison of the proposed Cascade WHT attack against existing cryptanalytic methods.
+
+\begin{table}[h]
+\centering
+\caption{Comparison of Cryptanalytic Attacks on Combining Generators}
+\label{tab:cryptanalysis_comparison}
+\begin{tabular}{@{}lllll@{}}
+\toprule
+\textbf{Attack Method} & \textbf{Time Complexity} & \textbf{Memory} & \textbf{Data ($N$)} & \textbf{Constraints} \\ \midrule
+\textbf{Exhaustive Corr.} & $O(N \cdot 2^L)$ & $O(1)$ & Low ($N \approx 50$) & None (always works) \\
+\textbf{Staffelbach FCA} & $O(N \cdot W \cdot I)$ & $O(N)$ & High ($N \ge 1000$) & Requires low-weight feedback poly \\
+\textbf{Turbo-FCA} & $O(N \cdot \text{dec})$ & $O(N^2)$ & High ($N \ge 1500$) & Requires low-weight multiples \\
+\textbf{Bulk WHT (CJM)} & $O(N \cdot L + L \cdot 2^L)$ & $O(2^L)$ & Moderate ($N \ge 200$) & Memory Wall ($L \le 30$) \\
+\textbf{Cascade WHT} & $O(L \cdot 2^L + \sqrt{2^L} \cdot N)$ & $O(2^L)$ & Low ($N_1 \approx 132$) & Memory Wall ($L \le 30$) \\ \bottomrule
+\end{tabular}
+\end{table}
+
+### Identified Research Gap
+\begin{enumerate}
+    \item \textbf{Linear scaling with $N$:} Standard correlation and CJM scale linearly with $N$ for all candidate checks.
+    \item \textbf{FCA dependency:} Fast correlation attacks fail completely at research-scale register lengths ($L \ge 25$) when low-weight parity-check equations are unavailable.
+    \item \textbf{Absence of two-stage design:} No prior attack uses a fast, coarse spectral filter to prune the search space before running a precise refinement step.
+\end{enumerate}
+
+\section{Motivation for the Proposed Attack}
+\label{sec:motivation_cascade}
+
+The proposed attack is inspired by the \textbf{Cascade Classifier} concept from machine learning (e.g., the Viola-Jones face detection algorithm). 
+
+### The "Reduce, then Refine" Paradigm
+In face detection, a series of simple, fast classifiers rejects the vast majority of non-face sub-windows early in the pipeline, leaving only a few promising regions to be processed by slower, more accurate classifiers. 
+
+We apply this paradigm to correlation cryptanalysis:
+\begin{enumerate}
+    \item \textbf{Stage 1 (Fast, Coarse):} Uses a small keystream prefix $N_1$ to run a coarse WHT. Since $N_1$ is small, this stage is fast and filters out $99.99\%$ of the incorrect seeds, retaining only the top $M = \sqrt{2^L}$ candidates.
+    \item \textbf{Stage 2 (Slow, Accurate):} Focuses the computationally expensive $N$-bit correlation sum only on the $M$ surviving candidates.
+\end{enumerate}
+
+By partitioning the attack into two stages, we achieve sub-linear scaling with the keystream length $N$, combining the speed of the WHT with the accuracy of full-length correlation verification.
